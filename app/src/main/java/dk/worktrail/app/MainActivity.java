@@ -6,7 +6,7 @@ import android.app.AlertDialog;
 import android.app.DatePickerDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.graphics.Color;
+import android.content.res.Configuration;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
@@ -36,8 +36,8 @@ import java.util.List;
 import java.util.Locale;
 
 public final class MainActivity extends Activity {
-    private static final int BG = 0xFF0C1526, PANEL = 0xFF18263B, MUTED = 0xFF9AACBF;
-    private static final int WHITE = 0xFFF3F7FC, ACCENT = 0xFF79D8C4, NEGATIVE = 0xFFFF9A9A;
+    private int BG, PANEL, MUTED, WHITE, ACCENT, NEGATIVE, BORDER, NAV, FIELD;
+    private boolean dark;
     private static final String[] DAYS = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
     private final SimpleDateFormat date = new SimpleDateFormat("EEE, d MMM yyyy", Locale.getDefault());
     private final SimpleDateFormat stamp = new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault());
@@ -48,12 +48,10 @@ public final class MainActivity extends Activity {
     private String tab = "Today", exportType = "visits";
     private boolean initialSyncDone = false;
     private Calendar historyDay = Calendar.getInstance();
+    private Calendar displayedMonth = Calendar.getInstance();
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
-        getWindow().setStatusBarColor(BG);
-        getWindow().setNavigationBarColor(BG);
-        getWindow().getDecorView().setSystemUiVisibility(0);
         db = new TrackerDb(this);
         schedule = new Schedule(this);
         render();
@@ -69,6 +67,25 @@ public final class MainActivity extends Activity {
     }
 
     private int px(float dp) { return (int) (dp * getResources().getDisplayMetrics().density + .5f); }
+
+    private void applyPalette() {
+        dark = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
+                == Configuration.UI_MODE_NIGHT_YES;
+        BG = dark ? 0xFF0B1524 : 0xFFF3F6FB;
+        PANEL = dark ? 0xFF18263B : 0xFFFFFFFF;
+        MUTED = dark ? 0xFFADBCD0 : 0xFF607188;
+        WHITE = dark ? 0xFFF3F7FC : 0xFF172438;
+        ACCENT = dark ? 0xFF68E0BC : 0xFF087D70;
+        NEGATIVE = dark ? 0xFFFF95A2 : 0xFFBE4054;
+        BORDER = dark ? 0xFF35485F : 0xFFDAE4EC;
+        NAV = dark ? 0xFF101D30 : 0xFFFFFFFF;
+        FIELD = dark ? 0xFF25364A : 0xFFEDF2F6;
+        getWindow().setStatusBarColor(BG);
+        getWindow().setNavigationBarColor(NAV);
+        int flags = dark ? 0 : View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+        if (!dark && Build.VERSION.SDK_INT >= 26) flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        getWindow().getDecorView().setSystemUiVisibility(flags);
+    }
 
     private GradientDrawable shape(int color, int radius) {
         GradientDrawable d = new GradientDrawable();
@@ -102,7 +119,9 @@ public final class MainActivity extends Activity {
     private LinearLayout card() {
         LinearLayout c = column();
         c.setPadding(px(17), px(16), px(17), px(16));
-        c.setBackground(shape(PANEL, 18));
+        GradientDrawable bg = shape(PANEL, 18);
+        bg.setStroke(px(1), BORDER);
+        c.setBackground(bg);
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2);
         p.setMargins(0, 0, 0, px(12));
         page.addView(c, p);
@@ -122,9 +141,21 @@ public final class MainActivity extends Activity {
         Button b = new Button(this);
         b.setAllCaps(false);
         b.setText(label);
-        b.setTextColor(BG);
+        b.setTextColor(HeatmapColors.readableText(ACCENT));
         b.setTextSize(14);
+        b.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         b.setBackground(shape(ACCENT, 12));
+        b.setOnClickListener(v -> click.run());
+        return b;
+    }
+
+    private TextView quietButton(String label, Runnable click) {
+        TextView b = text(label, 13, ACCENT, true);
+        b.setGravity(Gravity.CENTER);
+        b.setPadding(px(12), px(9), px(12), px(9));
+        GradientDrawable surface = shape(FIELD, 10);
+        surface.setStroke(px(1), BORDER);
+        b.setBackground(surface);
         b.setOnClickListener(v -> click.run());
         return b;
     }
@@ -136,14 +167,16 @@ public final class MainActivity extends Activity {
     }
 
     private void render() {
+        applyPalette();
         root = column();
         root.setBackgroundColor(BG);
         setContentView(root);
         LinearLayout heading = column();
-        heading.setPadding(px(22), px(20), px(22), px(17));
-        line(heading, "WORKTRAIL  /  PERSONAL TIMESHEET", 11, ACCENT, true);
+        heading.setPadding(px(22), px(21), px(22), px(18));
+        line(heading, "●  WORKTRAIL    /    YOUR TIME, IN FOCUS", 11, ACCENT, true);
         smallGap(heading);
-        line(heading, tab, 29, WHITE, true);
+        line(heading, tab.equals("History") ? "Your activity" : tab.equals("Today") ? "Good to see you" : tab,
+                29, WHITE, true);
         root.addView(heading);
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
@@ -159,9 +192,10 @@ public final class MainActivity extends Activity {
         }
         LinearLayout nav = row();
         nav.setPadding(px(8), px(9), px(8), px(12));
-        nav.setBackgroundColor(PANEL);
+        nav.setBackgroundColor(NAV);
         for (String item : new String[]{"Today", "History", "Places", "Schedule"}) {
-            TextView n = text(item, 13, tab.equals(item) ? ACCENT : MUTED, tab.equals(item));
+            String symbol = item.equals("Today") ? "◉" : item.equals("History") ? "▦" : item.equals("Places") ? "⌖" : "⚙";
+            TextView n = text(symbol + "  " + item, 13, tab.equals(item) ? ACCENT : MUTED, tab.equals(item));
             n.setGravity(Gravity.CENTER);
             n.setPadding(px(2), px(8), px(2), px(8));
             n.setOnClickListener(v -> { tab = item; render(); });
@@ -180,12 +214,18 @@ public final class MainActivity extends Activity {
         TrackerDb.Daily current = db.daily(start.getTimeInMillis(), tomorrow.getTimeInMillis(), now, schedule.targetForDay(start), schedule);
         TrackerDb.Session open = db.openSession();
         LinearLayout top = card();
-        line(top, date.format(new Date(now)), 14, MUTED, false);
+        GradientDrawable hero = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                new int[]{dark ? 0xFF193D63 : 0xFF17446A, dark ? 0xFF13564B : 0xFF087B69});
+        hero.setCornerRadius(px(18));
+        top.setBackground(hero);
+        line(top, open == null ? "●  LOCATION STATUS" : "●  LIVE WORK SESSION", 12, 0xFFC3EFE5, true);
         smallGap(top);
-        line(top, open == null ? "Away from work" : "At " + open.placeName, 22, open == null ? WHITE : ACCENT, true);
+        line(top, date.format(new Date(now)), 13, 0xFFD5E5ED, false);
+        smallGap(top);
+        line(top, open == null ? "Away from work" : "At " + open.placeName, 23, 0xFFFFFFFF, true);
         if (open != null) {
             smallGap(top);
-            line(top, "Entry: " + stamp.format(new Date(open.start)) + "  ·  " + open.source, 13, MUTED, false);
+            line(top, "Entry: " + stamp.format(new Date(open.start)) + "  ·  " + open.source, 13, 0xFFD5E5ED, false);
             addButton(top, "End this visit manually", () -> manuallyFinish(open));
         } else if (!db.places().isEmpty()) {
             addButton(top, "Start a visit manually", this::chooseManualCheckIn);
@@ -206,6 +246,7 @@ public final class MainActivity extends Activity {
             addButton(worked, "Set your custom weekly schedule", () -> { tab = "Schedule"; render(); editSchedule(); });
         }
 
+        renderMonthHeatmap();
         renderDayDetails(start, tomorrow, now);
 
         if (!Geofences.canMonitor(this)) {
@@ -222,7 +263,7 @@ public final class MainActivity extends Activity {
         }
 
         LinearLayout week = card();
-        line(week, "THIS WEEK  ·  MON–SUN", 13, MUTED, true);
+        line(week, "THIS WEEK  ·  MON–SUN", 12, MUTED, true);
         smallGap(week);
         Calendar monday = TimeMath.monday(now);
         int totalCredited = 0, targetToDate = 0;
@@ -230,94 +271,217 @@ public final class MainActivity extends Activity {
             Calendar end = (Calendar) monday.clone();
             end.add(Calendar.DAY_OF_MONTH, 1);
             TrackerDb.Daily d = db.daily(monday.getTimeInMillis(), end.getTimeInMillis(), now, schedule.target(i), schedule);
-            boolean future = monday.getTimeInMillis() > now;
-            LinearLayout r = row();
-            r.setPadding(0, px(8), 0, px(8));
-            TextView day = text(DAYS[i], 14, future ? MUTED : WHITE, false);
-            r.addView(day, new LinearLayout.LayoutParams(0, -2, 1));
-            String summary = future ? "—" : TimeMath.hhmm(d.creditedMinutes) + " h";
-            if (!future && schedule.configured()) summary += "   " + TimeMath.signed(d.creditedMinutes - d.targetMinutes);
-            r.addView(text(summary, 14, future ? MUTED : (schedule.configured() && d.creditedMinutes < d.targetMinutes ? NEGATIVE : ACCENT), !future));
-            week.addView(r);
-            if (!future) { totalCredited += d.creditedMinutes; targetToDate += d.targetMinutes; }
+            if (monday.getTimeInMillis() <= now) {
+                totalCredited += d.creditedMinutes;
+                targetToDate += d.targetMinutes;
+            }
             monday = end;
         }
-        smallGap(week);
-        line(week, "Week to date: " + TimeMath.hhmm(totalCredited) + " h", 19, WHITE, true);
+        line(week, TimeMath.hhmm(totalCredited) + " h worked", 24, WHITE, true);
         if (schedule.configured())
-            line(week, "Balance to date: " + TimeMath.signed(totalCredited - targetToDate) + " h    ·    Full-week target: " + TimeMath.hhmm(schedule.weeklyTarget()) + " h", 13, ACCENT, true);
+            line(week, TimeMath.signed(totalCredited - targetToDate) + " h balance so far  ·  " +
+                    TimeMath.hhmm(schedule.weeklyTarget()) + " h weekly target", 13,
+                    totalCredited >= targetToDate ? ACCENT : NEGATIVE, true);
         line(week, "Automatic timestamps are estimates; review records when precision matters.", 12, MUTED, false);
     }
 
     private void renderHistory() {
-        LinearLayout actions = card();
-        line(actions, "All records stay on your phone until you choose to export them.", 13, MUTED, false);
-        addButton(actions, "Add a missing visit", () -> editSession(null));
-        addButton(actions, "Add work from home / manual hours", () -> editManualWork(null));
-        addButton(actions, "Export visit records (.csv)", () -> beginExport("visits"));
-        addButton(actions, "Export manual hours (.csv)", () -> beginExport("manual"));
-        addButton(actions, "Export last 365 daily balances (.csv)", () -> beginExport("daily"));
+        renderMonthHeatmap();
 
         Calendar selected = (Calendar) historyDay.clone();
         midnight(selected);
         Calendar next = (Calendar) selected.clone();
         next.add(Calendar.DAY_OF_MONTH, 1);
         LinearLayout picker = card();
-        line(picker, "Daily details: " + date.format(selected.getTime()), 17, WHITE, true);
-        addButton(picker, "Choose a different day", () -> {
+        line(picker, "SELECTED DAY", 12, MUTED, true);
+        smallGap(picker);
+        line(picker, date.format(selected.getTime()), 21, WHITE, true);
+        TrackerDb.Daily selectedStats = db.daily(selected.getTimeInMillis(), next.getTimeInMillis(), System.currentTimeMillis(), schedule.targetForDay(selected), schedule);
+        smallGap(picker);
+        line(picker, TimeMath.hhmm(selectedStats.creditedMinutes) + " h credited" +
+                (schedule.configured() ? "   ·   " + TimeMath.signed(selectedStats.creditedMinutes - selectedStats.targetMinutes) + " h balance" : ""),
+                15, selectedStats.creditedMinutes >= selectedStats.targetMinutes ? ACCENT : NEGATIVE, true);
+        LinearLayout controls = row();
+        LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(0, px(42), 1f);
+        actionParams.setMargins(0, px(12), px(8), 0);
+        controls.addView(quietButton("Choose date", () -> {
             Calendar h = historyDay;
             new DatePickerDialog(this, (view, year, month, dayOfMonth) -> {
                 historyDay.set(year, month, dayOfMonth);
+                displayedMonth.set(year, month, 1);
                 render();
             }, h.get(Calendar.YEAR), h.get(Calendar.MONTH), h.get(Calendar.DAY_OF_MONTH)).show();
-        });
-        TrackerDb.Daily selectedStats = db.daily(selected.getTimeInMillis(), next.getTimeInMillis(), System.currentTimeMillis(), schedule.targetForDay(selected), schedule);
-        line(picker, "Credited " + TimeMath.hhmm(selectedStats.creditedMinutes) + " h" +
-                (schedule.configured() ? "  ·  Balance " + TimeMath.signed(selectedStats.creditedMinutes - selectedStats.targetMinutes) + " h" : ""),
-                15, ACCENT, true);
+        }), actionParams);
+        LinearLayout.LayoutParams addParams = new LinearLayout.LayoutParams(0, px(42), 1f);
+        addParams.topMargin = px(12);
+        controls.addView(quietButton("+ Log hours", () -> editManualWork(null)), addParams);
+        picker.addView(controls);
+
         renderDayDetails(selected, next, System.currentTimeMillis());
-        if (schedule.configured()) {
-            LinearLayout weekly = card();
-            line(weekly, "RECENT WEEKLY BALANCES", 13, MUTED, true);
-            smallGap(weekly);
-            Calendar monday = TimeMath.monday(System.currentTimeMillis());
-            for (int week = 0; week < 8; week++) {
-                Calendar day = (Calendar) monday.clone();
-                day.add(Calendar.DAY_OF_MONTH, -7 * week);
-                String label = new SimpleDateFormat("d MMM", Locale.getDefault()).format(day.getTime());
-                long now = System.currentTimeMillis();
-                int credited = 0, target = 0;
-                for (int d = 0; d < 7; d++) {
-                    Calendar end = (Calendar) day.clone();
-                    end.add(Calendar.DAY_OF_MONTH, 1);
-                    if (day.getTimeInMillis() <= now) {
-                        TrackerDb.Daily stat = db.daily(day.getTimeInMillis(), end.getTimeInMillis(), now, schedule.target(d), schedule);
-                        credited += stat.creditedMinutes;
-                        target += stat.targetMinutes;
-                    }
-                    day = end;
+
+        LinearLayout actions = card();
+        line(actions, "Need to correct a missing check-in? Add a visit, then tap any day to review it.", 13, MUTED, false);
+        addButton(actions, "+ Add a missing visit", () -> editSession(null));
+        addButton(actions, "Export timesheets (.csv)", () -> new AlertDialog.Builder(this)
+                .setTitle("Export timesheets")
+                .setItems(new String[]{"Check-in / check-out visits", "Work from home / manual hours", "Last 365 days: totals and balances"},
+                        (dialog, which) -> beginExport(new String[]{"visits", "manual", "daily"}[which]))
+                .show());
+        line(actions, "Your records stay on this phone until you choose to export them.", 12, MUTED, false);
+    }
+
+    private void renderMonthHeatmap() {
+        LinearLayout board = card();
+        line(board, "YOUR MONTH AT A GLANCE", 12, MUTED, true);
+        smallGap(board);
+        Calendar first = (Calendar) displayedMonth.clone();
+        midnight(first);
+        first.set(Calendar.DAY_OF_MONTH, 1);
+        String label = new SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(first.getTime());
+        LinearLayout header = row();
+        header.addView(quietButton("‹", () -> {
+            displayedMonth.add(Calendar.MONTH, -1);
+            render();
+        }), new LinearLayout.LayoutParams(px(42), px(40)));
+        TextView month = text(label, 21, WHITE, true);
+        month.setGravity(Gravity.CENTER);
+        header.addView(month, new LinearLayout.LayoutParams(0, px(40), 1));
+        header.addView(quietButton("›", () -> {
+            displayedMonth.add(Calendar.MONTH, 1);
+            render();
+        }), new LinearLayout.LayoutParams(px(42), px(40)));
+        board.addView(header);
+        smallGap(board);
+
+        LinearLayout weekdays = row();
+        for (String weekday : new String[]{"M", "T", "W", "T", "F", "S", "S"}) {
+            TextView title = text(weekday, 11, MUTED, true);
+            title.setGravity(Gravity.CENTER);
+            weekdays.addView(title, new LinearLayout.LayoutParams(0, px(25), 1));
+        }
+        board.addView(weekdays);
+
+        int leading = TimeMath.mondayIndex(first.get(Calendar.DAY_OF_WEEK));
+        int dayCount = first.getActualMaximum(Calendar.DAY_OF_MONTH);
+        int rows = (leading + dayCount + 6) / 7;
+        long now = System.currentTimeMillis();
+        int monthCredited = 0, monthExpected = 0;
+        for (int week = 0; week < rows; week++) {
+            LinearLayout gridRow = row();
+            for (int weekday = 0; weekday < 7; weekday++) {
+                int dayNumber = week * 7 + weekday - leading + 1;
+                LinearLayout.LayoutParams cell = new LinearLayout.LayoutParams(0, px(53), 1);
+                cell.setMargins(px(2), px(2), px(2), px(2));
+                if (dayNumber < 1 || dayNumber > dayCount) {
+                    gridRow.addView(new View(this), cell);
+                    continue;
                 }
-                // Do not display empty historical weeks preceding first usage.
-                if (week > 0 && credited == 0) continue;
-                int balance = credited - target;
-                line(weekly, label + "  ·  " + TimeMath.hhmm(credited) + " / " + TimeMath.hhmm(target) + " h  ·  " + TimeMath.signed(balance) + " h",
-                        14, balance >= 0 ? ACCENT : NEGATIVE, true);
-                smallGap(weekly);
+                Calendar day = (Calendar) first.clone();
+                day.set(Calendar.DAY_OF_MONTH, dayNumber);
+                Calendar end = (Calendar) day.clone();
+                end.add(Calendar.DAY_OF_MONTH, 1);
+                boolean future = day.getTimeInMillis() > now;
+                TrackerDb.Daily stats = db.daily(day.getTimeInMillis(), end.getTimeInMillis(),
+                        now, schedule.targetForDay(day), schedule);
+                if (!future) {
+                    monthCredited += stats.creditedMinutes;
+                    monthExpected += stats.targetMinutes;
+                }
+                int tileColor = HeatmapColors.tileColor(stats.creditedMinutes, stats.targetMinutes,
+                        schedule.configured(), future, dark);
+                String hours = (future || (stats.creditedMinutes == 0 && stats.targetMinutes == 0))
+                        ? "—" : TimeMath.hhmm(stats.creditedMinutes);
+                TextView tile = text(dayNumber + "\n" + hours, 11, HeatmapColors.readableText(tileColor), true);
+                tile.setGravity(Gravity.CENTER);
+                tile.setLineSpacing(px(2), 1f);
+                GradientDrawable surface = shape(tileColor, 9);
+                Calendar selected = tab.equals("History") ? historyDay : Calendar.getInstance();
+                boolean selectedDay = day.get(Calendar.YEAR) == selected.get(Calendar.YEAR)
+                        && day.get(Calendar.DAY_OF_YEAR) == selected.get(Calendar.DAY_OF_YEAR);
+                surface.setStroke(px(selectedDay ? 2 : 1), selectedDay ? ACCENT : BORDER);
+                tile.setBackground(surface);
+                tile.setContentDescription(date.format(day.getTime()) + ", " +
+                        (future ? "future" : TimeMath.hhmm(stats.creditedMinutes) + " hours credited") +
+                        ". Tap for details.");
+                tile.setOnClickListener(v -> showDayPopup(day));
+                gridRow.addView(tile, cell);
             }
-            line(weekly, "Current week is compared through today; completed weeks use all seven target days.", 12, MUTED, false);
+            board.addView(gridRow);
         }
-        List<TrackerDb.Session> sessions = db.sessions(100);
-        if (sessions.isEmpty()) line(card(), "No on-site visits yet. Work-from-home hours appear in the selected day's details above.", 14, MUTED, false);
-        for (TrackerDb.Session s : sessions) {
-            LinearLayout c = card();
-            line(c, s.placeName + (s.manual ? "   ·   edited" : ""), 18, WHITE, true);
-            smallGap(c);
-            line(c, stamp.format(new Date(s.start)) + " → " + (s.end == null ? "ongoing" : stamp.format(new Date(s.end))), 13, MUTED, false);
-            if (s.end != null) line(c, TimeMath.hhmm(TimeMath.minutes(s.end - s.start)) + " elapsed hours", 13, ACCENT, true);
-            line(c, "Method: " + s.source + "  ·  Wi-Fi: " + s.wifiResult, 12, MUTED, false);
-            if (!s.note.isEmpty()) line(c, s.note, 12, MUTED, false);
-            addButton(c, "Review / correct", () -> editSession(s));
+        smallGap(board);
+        if (schedule.configured()) {
+            line(board, TimeMath.hhmm(monthCredited) + " h logged  ·  " +
+                    TimeMath.signed(monthCredited - monthExpected) + " h vs target", 15, WHITE, true);
+            smallGap(board);
+        } else {
+            line(board, "Set your weekly targets to enable blue / green / red comparisons.", 13, MUTED, false);
+            addButton(board, "Configure targets", () -> { tab = "Schedule"; render(); editSchedule(); });
         }
+        LinearLayout legend = row();
+        legend.addView(legendItem(HeatmapColors.BLUE, "Below"), new LinearLayout.LayoutParams(0, px(28), 1));
+        legend.addView(legendItem(HeatmapColors.GREEN, "On target"), new LinearLayout.LayoutParams(0, px(28), 1));
+        legend.addView(legendItem(HeatmapColors.RED, "Above"), new LinearLayout.LayoutParams(0, px(28), 1));
+        board.addView(legend);
+        line(board, "Blue: less work  ·  Green: within 15 minutes  ·  Red: extra hours. Tap a square for details.", 12, MUTED, false);
+    }
+
+    private LinearLayout legendItem(int color, String label) {
+        LinearLayout item = row();
+        View swatch = new View(this);
+        swatch.setBackground(shape(color, 4));
+        LinearLayout.LayoutParams icon = new LinearLayout.LayoutParams(px(12), px(12));
+        icon.rightMargin = px(5);
+        item.addView(swatch, icon);
+        item.addView(text(label, 11, MUTED, false));
+        return item;
+    }
+
+    private void showDayPopup(Calendar selected) {
+        Calendar day = (Calendar) selected.clone();
+        midnight(day);
+        Calendar end = (Calendar) day.clone();
+        end.add(Calendar.DAY_OF_MONTH, 1);
+        long now = System.currentTimeMillis();
+        TrackerDb.Daily stats = db.daily(day.getTimeInMillis(), end.getTimeInMillis(),
+                now, schedule.targetForDay(day), schedule);
+        LinearLayout content = column();
+        line(content, "CREDITED WORK", 12, MUTED, true);
+        smallGap(content);
+        line(content, TimeMath.hhmm(stats.creditedMinutes) + " h", 30, WHITE, true);
+        line(content, "On-site: " + TimeMath.hhmm(stats.onsiteCreditedMinutes) + " h  ·  Manual: " +
+                TimeMath.hhmm(stats.manualMinutes) + " h", 13, MUTED, false);
+        if (schedule.configured()) {
+            smallGap(content);
+            line(content, "Target " + TimeMath.hhmm(stats.targetMinutes) + " h   ·   Balance " +
+                    TimeMath.signed(stats.creditedMinutes - stats.targetMinutes) + " h", 14,
+                    stats.creditedMinutes >= stats.targetMinutes ? ACCENT : NEGATIVE, true);
+        }
+        smallGap(content);
+        List<TrackerDb.Session> visits = db.sessionsForDay(day.getTimeInMillis(), end.getTimeInMillis());
+        if (visits.isEmpty()) line(content, "No workplace check-ins recorded.", 13, MUTED, false);
+        for (TrackerDb.Session visit : visits) {
+            line(content, visit.placeName, 15, WHITE, true);
+            line(content, "In  " + stamp.format(new Date(visit.start)), 13, MUTED, false);
+            line(content, "Out  " + (visit.end == null ? "Still checked in" : stamp.format(new Date(visit.end))), 13, MUTED, false);
+            if (visit.note != null && !visit.note.isEmpty()) line(content, visit.note, 12, MUTED, false);
+            smallGap(content);
+        }
+        for (TrackerDb.ManualWork manual : db.manualWorkForDay(isoDate.format(day.getTime()))) {
+            line(content, ("home".equals(manual.type) ? "Work from home" : "Other manual work") +
+                    "  ·  " + TimeMath.hhmm(manual.minutes) + " h", 14, ACCENT, true);
+            if (!manual.note.isEmpty()) line(content, manual.note, 13, MUTED, false);
+            smallGap(content);
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(date.format(day.getTime()))
+                .setView(dialogContent(content))
+                .setNegativeButton("Close", null)
+                .setPositiveButton("View / edit day", (dialog, which) -> {
+                    historyDay = (Calendar) day.clone();
+                    displayedMonth = (Calendar) day.clone();
+                    tab = "History";
+                    render();
+                }).show();
     }
 
     private void renderDayDetails(Calendar start, Calendar end, long now) {
@@ -400,7 +564,9 @@ public final class MainActivity extends Activity {
         e.setHintTextColor(MUTED);
         e.setTextSize(16);
         e.setPadding(px(10), px(9), px(10), px(9));
-        e.setBackground(shape(PANEL, 8));
+        GradientDrawable input = shape(FIELD, 8);
+        input.setStroke(px(1), BORDER);
+        e.setBackground(input);
         parent.addView(e, new LinearLayout.LayoutParams(-1, px(43)));
         return e;
     }
@@ -577,7 +743,8 @@ public final class MainActivity extends Activity {
 
     private void editManualWork(TrackerDb.ManualWork old) {
         LinearLayout content = column();
-        EditText day = field(content, "Date (yyyy-MM-dd)", old == null ? isoDate.format(new Date()) : old.day);
+        String defaultDay = tab.equals("History") ? isoDate.format(historyDay.getTime()) : isoDate.format(new Date());
+        EditText day = field(content, "Date (yyyy-MM-dd)", old == null ? defaultDay : old.day);
         EditText duration = field(content, "Hours actually worked (h:mm, excluding breaks)", old == null ? "0:00" : TimeMath.hhmm(old.minutes));
         CheckBox home = new CheckBox(this);
         home.setText("Mark as work from home");

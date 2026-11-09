@@ -19,6 +19,9 @@ public final class SmokeTest {
                 "Two hours of home work added without a second break");
         check(TimeMath.totalCreditedMinutes(0, 30, 360, 180) == 180,
                 "Home-only day credits three hours exactly");
+        check(HeatmapColors.tileColor(444, 444, true, false, true) == HeatmapColors.GREEN, "Target is green");
+        check(HeatmapColors.tileColor(0, 444, true, false, true) == HeatmapColors.BLUE, "Under target is blue");
+        check(HeatmapColors.tileColor(600, 444, true, false, true) == HeatmapColors.RED, "Over target is red");
         System.out.println("PASS: WorkTrail business logic smoke tests");
     }
 }

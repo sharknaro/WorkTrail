@@ -33,4 +33,12 @@ public class TimeMathTest {
         assertEquals(465 + 120, TimeMath.totalCreditedMinutes(495 * 60000L, 30, 360, 120));
         assertEquals(180, TimeMath.totalCreditedMinutes(0, 30, 360, 180));
     }
+
+    @Test public void calendarColorReflectsDeviation() {
+        assertEquals(HeatmapColors.GREEN, HeatmapColors.tileColor(444, 444, true, false, true));
+        assertEquals(HeatmapColors.BLUE, HeatmapColors.tileColor(0, 444, true, false, true));
+        assertEquals(HeatmapColors.RED, HeatmapColors.tileColor(600, 444, true, false, true));
+        assertNotEquals(HeatmapColors.GREEN, HeatmapColors.tileColor(0, 0, true, false, true));
+        assertEquals(0xFFE9EFF3, HeatmapColors.tileColor(444, 444, true, true, false));
+    }
 }

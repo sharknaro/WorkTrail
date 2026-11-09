@@ -11,8 +11,8 @@ android {
         minSdk 26
         targetSdk 34
         // GitHub workflow runs automatically get increasing version codes.
-        versionCode (System.getenv('GITHUB_RUN_NUMBER') ? 1000 + Integer.parseInt(System.getenv('GITHUB_RUN_NUMBER')) : 2)
-        versionName '0.2.0'
+        versionCode (System.getenv('GITHUB_RUN_NUMBER') ? 1000 + Integer.parseInt(System.getenv('GITHUB_RUN_NUMBER')) : 3)
+        versionName '0.3.0'
     }
 
     // Optional persistent signing: add the four WORKTRAIL_* GitHub secrets

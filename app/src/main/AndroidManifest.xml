@@ -11,7 +11,7 @@
     <application
         android:allowBackup="false"
         android:label="WorkTrail"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar"
+        android:theme="@style/WorkTrailTheme"
         android:usesCleartextTraffic="false">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>

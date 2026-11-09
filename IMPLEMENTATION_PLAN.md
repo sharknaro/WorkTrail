@@ -22,7 +22,16 @@ Maintain a private, automatically generated record of the time a user spends at 
 
 The initial recorded event time is the time Android delivers the location broadcast. It is an estimate rather than a guaranteed timestamp at the building door; delays of minutes are possible. The app records both visits and raw events locally. Corrections are marked as manual. Wi-Fi SSIDs currently annotate geofence events but are not independently polled or used to end a visit.
 
-## v0.2 — field-testing improvements
+## v0.2 — manual work and day details (implemented in this source)
+
+1. Show actual check-in and check-out timestamps on Today and for a selected date in History.
+2. Display duration within that calendar day for each visit, including overnight visits.
+3. Add edit/delete forms for manual home-work or other manual hours, dated and commented, without fictitious timestamps.
+4. Add manual net hours to daily and weekly totals without subtracting a second break; export manual entries and revised daily totals.
+5. Migrate v1 SQLite databases without dropping existing visit records.
+6. Use Android SDK setup action v4 and support optional persistent signing via GitHub secrets.
+
+## v0.3 — field-testing improvements
 
 1. Test at each building for 3–5 workdays, comparing event timestamps with the user's own observations.
 2. Tune per-place radius, validate false positives and missed exits, and adjust the 10-minute re-entry merge rule.
@@ -30,7 +39,7 @@ The initial recorded event time is the time Android delivers the location broadc
 4. Add an end-of-day review reminder, separate break intervals and a calendar for leave/public holidays.
 5. Add an on-device warning when location permission, location services, battery restriction, or Google Play services breaks tracking.
 
-## v0.3 — optional quality-of-life features
+## v0.4 — optional quality-of-life features
 
 1. Opt-in Google Sheets sync with a secure, user-controlled endpoint and offline retry queue.
 2. A generated location/date/time record image (not an automatic Google Maps screen capture).

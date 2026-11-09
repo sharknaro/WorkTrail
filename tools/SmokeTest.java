@@ -15,6 +15,10 @@ public final class SmokeTest {
                 "Split overnight visits at midnight");
         check(TimeMath.mondayIndex(java.util.Calendar.SUNDAY) == 6, "Sunday belongs last");
         check("−0:14".equals(TimeMath.signed(-14)), "Signed negative balance");
+        check(TimeMath.totalCreditedMinutes(495 * 60000L, 30, 360, 120) == 585,
+                "Two hours of home work added without a second break");
+        check(TimeMath.totalCreditedMinutes(0, 30, 360, 180) == 180,
+                "Home-only day credits three hours exactly");
         System.out.println("PASS: WorkTrail business logic smoke tests");
     }
 }

@@ -28,4 +28,9 @@ public class TimeMathTest {
     @Test public void negativeBalance() {
         assertEquals("−0:14", TimeMath.signed(-14));
     }
+
+    @Test public void homeHoursAreAddedWithoutDoubleBreak() {
+        assertEquals(465 + 120, TimeMath.totalCreditedMinutes(495 * 60000L, 30, 360, 120));
+        assertEquals(180, TimeMath.totalCreditedMinutes(0, 30, 360, 180));
+    }
 }

@@ -22,21 +22,35 @@ public final class TrackerDb extends SQLiteOpenHelper {
         public String placeName, source, wifiResult, note;
         public boolean manual;
     }
+    /** Duration-only work without invented arrival/departure timestamps. */
+    public static final class ManualWork {
+        public long id;
+        public String day, type, note;
+        public int minutes;
+    }
     public static final class Daily {
         public long elapsedMillis;
-        public int creditedMinutes, targetMinutes;
+        public int onsiteCreditedMinutes, manualMinutes, creditedMinutes, targetMinutes;
     }
 
-    public TrackerDb(Context context) { super(context, "worktrail.db", null, 1); }
+    public TrackerDb(Context context) { super(context, "worktrail.db", null, 2); }
 
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE places (_id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, lat REAL NOT NULL, lon REAL NOT NULL, radius REAL NOT NULL, wifi TEXT NOT NULL DEFAULT '')");
         db.execSQL("CREATE TABLE sessions (_id INTEGER PRIMARY KEY AUTOINCREMENT, place_id INTEGER NOT NULL, place_name TEXT NOT NULL, start_ms INTEGER NOT NULL, end_ms INTEGER, source TEXT NOT NULL, wifi_result TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', manual INTEGER NOT NULL DEFAULT 0)");
         db.execSQL("CREATE INDEX sessions_time ON sessions(start_ms,end_ms)");
         db.execSQL("CREATE TABLE transitions (_id INTEGER PRIMARY KEY AUTOINCREMENT, place_id INTEGER NOT NULL, kind TEXT NOT NULL, at_ms INTEGER NOT NULL, wifi_result TEXT NOT NULL)");
+        createManualWorkTable(db);
     }
 
-    @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {}
+    private static void createManualWorkTable(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS manual_work (_id INTEGER PRIMARY KEY AUTOINCREMENT, day TEXT NOT NULL, type TEXT NOT NULL, minutes INTEGER NOT NULL, note TEXT NOT NULL DEFAULT '')");
+        db.execSQL("CREATE INDEX IF NOT EXISTS manual_work_day ON manual_work(day)");
+    }
+
+    @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+        if (oldVersion < 2) createManualWorkTable(db); // Keep all existing geofence visits.
+    }
 
     private static Place readPlace(Cursor c) {
         Place p = new Place();
@@ -103,6 +117,69 @@ public final class TrackerDb extends SQLiteOpenHelper {
             while (c.moveToNext()) result.add(readSession(c));
         }
         return result;
+    }
+
+    public List<Session> sessionsForDay(long dayStart, long dayEnd) {
+        List<Session> result = new ArrayList<>();
+        try (Cursor c = getReadableDatabase().rawQuery(
+                "SELECT _id,place_id,place_name,start_ms,end_ms,source,wifi_result,note,manual FROM sessions " +
+                "WHERE start_ms<? AND (end_ms IS NULL OR end_ms>?) ORDER BY start_ms",
+                new String[]{String.valueOf(dayEnd), String.valueOf(dayStart)})) {
+            while (c.moveToNext()) result.add(readSession(c));
+        }
+        return result;
+    }
+
+    private static ManualWork readManualWork(Cursor c) {
+        ManualWork m = new ManualWork();
+        m.id = c.getLong(0);
+        m.day = c.getString(1);
+        m.type = c.getString(2);
+        m.minutes = c.getInt(3);
+        m.note = c.getString(4);
+        return m;
+    }
+
+    public List<ManualWork> manualWorkForDay(String day) {
+        List<ManualWork> list = new ArrayList<>();
+        try (Cursor c = getReadableDatabase().rawQuery(
+                "SELECT _id,day,type,minutes,note FROM manual_work WHERE day=? ORDER BY _id",
+                new String[]{day})) {
+            while (c.moveToNext()) list.add(readManualWork(c));
+        }
+        return list;
+    }
+
+    public List<ManualWork> allManualWork() {
+        List<ManualWork> list = new ArrayList<>();
+        try (Cursor c = getReadableDatabase().rawQuery(
+                "SELECT _id,day,type,minutes,note FROM manual_work ORDER BY day DESC,_id DESC", null)) {
+            while (c.moveToNext()) list.add(readManualWork(c));
+        }
+        return list;
+    }
+
+    public void saveManualWork(ManualWork m) {
+        ContentValues v = new ContentValues();
+        v.put("day", m.day);
+        v.put("type", m.type);
+        v.put("minutes", m.minutes);
+        v.put("note", m.note == null ? "" : m.note);
+        if (m.id > 0)
+            getWritableDatabase().update("manual_work", v, "_id=?", new String[]{String.valueOf(m.id)});
+        else
+            getWritableDatabase().insertOrThrow("manual_work", null, v);
+    }
+
+    public void deleteManualWork(long id) {
+        getWritableDatabase().delete("manual_work", "_id=?", new String[]{String.valueOf(id)});
+    }
+
+    public int manualMinutesForDay(String day) {
+        try (Cursor c = getReadableDatabase().rawQuery(
+                "SELECT COALESCE(SUM(minutes),0) FROM manual_work WHERE day=?", new String[]{day})) {
+            return c.moveToFirst() ? c.getInt(0) : 0;
+        }
     }
 
     public Session openSession() {
@@ -211,7 +288,9 @@ public final class TrackerDb extends SQLiteOpenHelper {
     public Daily daily(long start, long end, long now, int target, Schedule schedule) {
         Daily day = new Daily();
         day.elapsedMillis = elapsedInDay(start, end, now);
-        day.creditedMinutes = TimeMath.creditedMinutes(day.elapsedMillis, schedule.breakMinutes(), schedule.breakThresholdMinutes());
+        day.onsiteCreditedMinutes = TimeMath.creditedMinutes(day.elapsedMillis, schedule.breakMinutes(), schedule.breakThresholdMinutes());
+        day.manualMinutes = manualMinutesForDay(new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(new java.util.Date(start)));
+        day.creditedMinutes = TimeMath.totalCreditedMinutes(day.elapsedMillis, schedule.breakMinutes(), schedule.breakThresholdMinutes(), day.manualMinutes);
         day.targetMinutes = target;
         return day;
     }

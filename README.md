@@ -1,8 +1,8 @@
-# WorkTrail — personal Android work-hours tracker
+# WorkTrail — personal Android work-hours tracker (v0.2)
 
 An offline-first Android app that automatically opens and closes work visits when the phone enters/exits a registered workplace. It compares credited time to a **custom Monday–Sunday schedule** and exports Excel-compatible CSV files. Intended for a personal timesheet, not a payroll-grade location record.
 
-## Features in v0.1
+## Features in v0.2
 
 - Register multiple workplaces by name, GPS coordinates and a 100–1000 m geofence radius. A button can fill in your current location when you are physically at work.
 - Optional workplace Wi-Fi SSID as a confirmation **hint** when a location event is received. Wi-Fi is not an independent trigger in this version; a mismatch does **not** suppress a location event.
@@ -11,8 +11,11 @@ An offline-first Android app that automatically opens and closes work visits whe
 - Merge re-entries within 10 minutes into one visit; prevent overlapping visits from double-counting in daily totals.
 - Correct an arrival/departure or add a visit manually. Manually start or finish a visit when Android misses an event.
 - Configure separate target hours for each weekday and an optional daily unpaid break with minimum-work threshold. Nothing is assumed about your employment contract until you save the schedule.
+- See today's check-in and check-out timestamps for every visit, visit duration on that day, worked-time totals and balance.
+- In **History**, select any calendar day to review its exact visit timestamps and edit them as needed.
+- Enter **work from home** or other manual work by date, net duration, and optional comment. These hours have no invented arrival/departure times and are not charged an additional break; they count toward daily and weekly totals.
 - See today's worked time and balance, seven-day summary, Monday–today balance, and recent weekly balances.
-- Export a list of visits or 365 days of daily totals as UTF-8 CSV for Excel, Google Sheets or LibreOffice. The output is *manual export*, not live synchronization.
+- Export visits, manual-hour entries, or 365 days of daily totals as UTF-8 CSV for Excel, Google Sheets or LibreOffice. The output is *manual export*, not live synchronization.
 
 ## Build an APK (GitHub Actions)
 
@@ -23,6 +26,8 @@ An offline-first Android app that automatically opens and closes work visits whe
 5. Open WorkTrail once, set your daily targets under **Schedule**, then add exact workplace building locations under **Places**.
 6. Tap **Enable location tracking** and grant precise location and **Allow all the time**. You can separately enable notifications so arrivals and departures appear in your notifications.
 
+For upgrading from v0.1, read [UPDATING.md](UPDATING.md). Your first APK was created using a temporary debug signing key, so Android may reject installing the new APK over it. Do not uninstall if it holds unexported records.
+
 You can alternatively import this directory in Android Studio and run the `app` configuration. Build system: Java 17, Gradle 8.11.1, Android Gradle Plugin 8.9.2, compile SDK 35, target SDK 34 for the current private APK prototype, Google Play services Location 21.4.0. Before any Play Store publication, update the app to the store's then-current target API requirements and adapt its edge-to-edge UI.
 
 ## Important limitations
@@ -32,9 +37,11 @@ You can alternatively import this directory in Android Studio and run the `app` 
 - If you register a geofence while already inside it, Android may emit an immediate entrance event; the recorded arrival will be the registration/detection time, **not** when you originally arrived.
 - Workplaces may overlap geographically; v0.1 closes an open session when another workplace starts. Commute between sites is **not** counted unless you add or adjust a record. Time spanning midnight is allocated to each calendar day by overlap.
 - The configured break is deducted **once per day** when accumulated work reaches the threshold, even if you visited several locations. If your actual break varies, adjust your schedule or records; this version does not track breaks separately.
+- Duration-only manual hours are assumed to be **net work** (breaks already excluded) and add directly to the daily total. Avoid double-counting time already covered by an on-site visit.
 - Wi-Fi SSID may be unavailable on certain Android versions/configurations. It serves as a non-blocking verification note. Android's location service can work better with Wi-Fi scanning enabled even without connecting to a network.
 - Keep Google Play services, location services and necessary battery/background permissions enabled. This app does not record continuous GPS trails.
 - No cloud account, live Google Sheets sync, auto-generated map images, holiday calendar, or signed release build yet. These are possible follow-up features.
+- For reliable in-place APK upgrades, use a **persistent signing key**. The build workflow can read one from GitHub Actions secrets; see [UPDATING.md](UPDATING.md).
 
 ## Data and privacy
 
@@ -53,7 +60,7 @@ For the first 3–5 working days, compare the automatic event times to your real
 ## File layout
 
 - `app/src/main/java/dk/worktrail/app/MainActivity.java` — native screens, forms and CSV export.
-- `TrackerDb.java` — local SQLite workplaces, visits, and event log.
+- `TrackerDb.java` — local SQLite workplaces, visits, manual-duration entries, and event log (schema v2 preserves existing visits).
 - `Geofences.java`, `GeofenceReceiver.java`, `BootReceiver.java` — geofence registration, transitions, reboot recovery.
 - `Schedule.java`, `TimeMath.java` — custom weekly targets, duration and break calculations.
 - `app/src/test/` — calculation tests.

@@ -10,8 +10,32 @@ android {
         applicationId 'dk.worktrail.app'
         minSdk 26
         targetSdk 34
-        versionCode 1
-        versionName '0.1.0'
+        // GitHub workflow runs automatically get increasing version codes.
+        versionCode (System.getenv('GITHUB_RUN_NUMBER') ? 1000 + Integer.parseInt(System.getenv('GITHUB_RUN_NUMBER')) : 2)
+        versionName '0.2.0'
+    }
+
+    // Optional persistent signing: add the four WORKTRAIL_* GitHub secrets
+    // described in UPDATING.md. Without them this remains a disposable debug APK.
+    signingConfigs {
+        persistent {
+            if (System.getenv('WORKTRAIL_SIGNING_FILE') && System.getenv('WORKTRAIL_STORE_PASSWORD') &&
+                    System.getenv('WORKTRAIL_SIGNING_ALIAS') && System.getenv('WORKTRAIL_KEY_PASSWORD')) {
+                storeFile file(System.getenv('WORKTRAIL_SIGNING_FILE'))
+                storePassword System.getenv('WORKTRAIL_STORE_PASSWORD')
+                keyAlias System.getenv('WORKTRAIL_SIGNING_ALIAS')
+                keyPassword System.getenv('WORKTRAIL_KEY_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            if (System.getenv('WORKTRAIL_SIGNING_FILE') && System.getenv('WORKTRAIL_STORE_PASSWORD') &&
+                    System.getenv('WORKTRAIL_SIGNING_ALIAS') && System.getenv('WORKTRAIL_KEY_PASSWORD')) {
+                signingConfig signingConfigs.persistent
+            }
+        }
     }
 
     compileOptions {

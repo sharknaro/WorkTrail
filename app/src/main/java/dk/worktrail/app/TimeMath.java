@@ -19,6 +19,11 @@ public final class TimeMath {
         return Math.max(0, elapsed - (elapsed >= thresholdMinutes ? breakMinutes : 0));
     }
 
+    /** Manual duration is already net work and never receives a second break deduction. */
+    public static int totalCreditedMinutes(long onsiteElapsedMs, int breakMinutes, int thresholdMinutes, int manualNetMinutes) {
+        return creditedMinutes(onsiteElapsedMs, breakMinutes, thresholdMinutes) + Math.max(0, manualNetMinutes);
+    }
+
     public static int mondayIndex(int calendarDayOfWeek) {
         return (calendarDayOfWeek + 5) % 7;
     }

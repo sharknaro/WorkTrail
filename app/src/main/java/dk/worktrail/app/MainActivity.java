@@ -3,6 +3,7 @@ package dk.worktrail.app;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.DatePickerDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -16,6 +17,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -45,6 +47,7 @@ public final class MainActivity extends Activity {
     private LinearLayout root, page;
     private String tab = "Today", exportType = "visits";
     private boolean initialSyncDone = false;
+    private Calendar historyDay = Calendar.getInstance();
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -187,12 +190,14 @@ public final class MainActivity extends Activity {
         } else if (!db.places().isEmpty()) {
             addButton(top, "Start a visit manually", this::chooseManualCheckIn);
         }
+        addButton(top, "+ Add work from home / manual hours", () -> editManualWork(null));
 
         LinearLayout worked = card();
         line(worked, "CREDITED WORK TODAY", 12, MUTED, true);
         smallGap(worked);
         line(worked, TimeMath.hhmm(current.creditedMinutes) + " h", 36, WHITE, true);
-        line(worked, "Elapsed " + TimeMath.hhmm(TimeMath.minutes(current.elapsedMillis)) + " h  ·  Unpaid breaks per schedule", 12, MUTED, false);
+        line(worked, "On-site elapsed: " + TimeMath.hhmm(TimeMath.minutes(current.elapsedMillis)) + " h", 13, MUTED, false);
+        line(worked, "On-site credited: " + TimeMath.hhmm(current.onsiteCreditedMinutes) + " h  ·  Manually added: " + TimeMath.hhmm(current.manualMinutes) + " h", 13, MUTED, false);
         if (schedule.configured()) {
             smallGap(worked);
             int balance = current.creditedMinutes - current.targetMinutes;
@@ -200,6 +205,8 @@ public final class MainActivity extends Activity {
         } else {
             addButton(worked, "Set your custom weekly schedule", () -> { tab = "Schedule"; render(); editSchedule(); });
         }
+
+        renderDayDetails(start, tomorrow, now);
 
         if (!Geofences.canMonitor(this)) {
             LinearLayout permissions = card();
@@ -246,8 +253,29 @@ public final class MainActivity extends Activity {
         LinearLayout actions = card();
         line(actions, "All records stay on your phone until you choose to export them.", 13, MUTED, false);
         addButton(actions, "Add a missing visit", () -> editSession(null));
+        addButton(actions, "Add work from home / manual hours", () -> editManualWork(null));
         addButton(actions, "Export visit records (.csv)", () -> beginExport("visits"));
+        addButton(actions, "Export manual hours (.csv)", () -> beginExport("manual"));
         addButton(actions, "Export last 365 daily balances (.csv)", () -> beginExport("daily"));
+
+        Calendar selected = (Calendar) historyDay.clone();
+        midnight(selected);
+        Calendar next = (Calendar) selected.clone();
+        next.add(Calendar.DAY_OF_MONTH, 1);
+        LinearLayout picker = card();
+        line(picker, "Daily details: " + date.format(selected.getTime()), 17, WHITE, true);
+        addButton(picker, "Choose a different day", () -> {
+            Calendar h = historyDay;
+            new DatePickerDialog(this, (view, year, month, dayOfMonth) -> {
+                historyDay.set(year, month, dayOfMonth);
+                render();
+            }, h.get(Calendar.YEAR), h.get(Calendar.MONTH), h.get(Calendar.DAY_OF_MONTH)).show();
+        });
+        TrackerDb.Daily selectedStats = db.daily(selected.getTimeInMillis(), next.getTimeInMillis(), System.currentTimeMillis(), schedule.targetForDay(selected), schedule);
+        line(picker, "Credited " + TimeMath.hhmm(selectedStats.creditedMinutes) + " h" +
+                (schedule.configured() ? "  ·  Balance " + TimeMath.signed(selectedStats.creditedMinutes - selectedStats.targetMinutes) + " h" : ""),
+                15, ACCENT, true);
+        renderDayDetails(selected, next, System.currentTimeMillis());
         if (schedule.configured()) {
             LinearLayout weekly = card();
             line(weekly, "RECENT WEEKLY BALANCES", 13, MUTED, true);
@@ -279,7 +307,7 @@ public final class MainActivity extends Activity {
             line(weekly, "Current week is compared through today; completed weeks use all seven target days.", 12, MUTED, false);
         }
         List<TrackerDb.Session> sessions = db.sessions(100);
-        if (sessions.isEmpty()) line(card(), "No visits yet. A location entry or a manual visit will appear here.", 14, MUTED, false);
+        if (sessions.isEmpty()) line(card(), "No on-site visits yet. Work-from-home hours appear in the selected day's details above.", 14, MUTED, false);
         for (TrackerDb.Session s : sessions) {
             LinearLayout c = card();
             line(c, s.placeName + (s.manual ? "   ·   edited" : ""), 18, WHITE, true);
@@ -290,6 +318,40 @@ public final class MainActivity extends Activity {
             if (!s.note.isEmpty()) line(c, s.note, 12, MUTED, false);
             addButton(c, "Review / correct", () -> editSession(s));
         }
+    }
+
+    private void renderDayDetails(Calendar start, Calendar end, long now) {
+        long from = start.getTimeInMillis(), until = end.getTimeInMillis();
+        LinearLayout details = card();
+        line(details, "CHECK-IN / CHECK-OUT", 13, MUTED, true);
+        smallGap(details);
+        List<TrackerDb.Session> visits = db.sessionsForDay(from, until);
+        if (visits.isEmpty()) line(details, "No recorded workplace visits for this day.", 13, MUTED, false);
+        for (TrackerDb.Session s : visits) {
+            line(details, s.placeName, 16, WHITE, true);
+            line(details, "Check-in: " + stamp.format(new Date(s.start)), 14, MUTED, false);
+            line(details, "Check-out: " + (s.end == null ? "Not yet recorded" : stamp.format(new Date(s.end))), 14, MUTED, false);
+            long sessionEnd = s.end == null ? now : s.end;
+            long dayElapsed = TimeMath.overlap(s.start, sessionEnd, from, Math.min(until, now));
+            line(details, "Time on this day: " + TimeMath.hhmm(TimeMath.minutes(dayElapsed)) + " h", 14, ACCENT, true);
+            if (s.note != null && !s.note.isEmpty()) line(details, "Note: " + s.note, 12, MUTED, false);
+            addButton(details, "Correct these times", () -> editSession(s));
+            smallGap(details);
+        }
+        String dayKey = isoDate.format(start.getTime());
+        List<TrackerDb.ManualWork> manual = db.manualWorkForDay(dayKey);
+        if (!manual.isEmpty()) {
+            line(details, "MANUALLY ENTERED WORK", 13, MUTED, true);
+            smallGap(details);
+        }
+        for (TrackerDb.ManualWork m : manual) {
+            line(details, ("home".equals(m.type) ? "Work from home" : "Other work") + "  ·  " + TimeMath.hhmm(m.minutes) + " h", 15, ACCENT, true);
+            line(details, "Duration only — no check-in/out timestamps", 12, MUTED, false);
+            if (!m.note.isEmpty()) line(details, "Comment: " + m.note, 13, WHITE, false);
+            addButton(details, "Edit manual hours", () -> editManualWork(m));
+            smallGap(details);
+        }
+        if (tab.equals("Today")) addButton(details, "+ Add work from home hours", () -> editManualWork(null));
     }
 
     private void renderPlaces() {
@@ -513,6 +575,49 @@ public final class MainActivity extends Activity {
         dialog.show();
     }
 
+    private void editManualWork(TrackerDb.ManualWork old) {
+        LinearLayout content = column();
+        EditText day = field(content, "Date (yyyy-MM-dd)", old == null ? isoDate.format(new Date()) : old.day);
+        EditText duration = field(content, "Hours actually worked (h:mm, excluding breaks)", old == null ? "0:00" : TimeMath.hhmm(old.minutes));
+        CheckBox home = new CheckBox(this);
+        home.setText("Mark as work from home");
+        home.setTextColor(WHITE);
+        home.setChecked(old == null || "home".equals(old.type));
+        LinearLayout.LayoutParams checkParams = new LinearLayout.LayoutParams(-1, -2);
+        checkParams.topMargin = px(12);
+        content.addView(home, checkParams);
+        EditText note = field(content, "Comment / activity (optional)", old == null ? "" : old.note);
+        line(content, "These hours are counted directly. No fictitious check-in or check-out time is generated, and no additional break is deducted.", 12, MUTED, false);
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(old == null ? "Add manual working hours" : "Edit manual working hours")
+                .setView(dialogContent(content))
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Save", null)
+                .create();
+        if (old != null) dialog.setButton(AlertDialog.BUTTON_NEUTRAL, "Delete", (d, w) ->
+                new AlertDialog.Builder(this).setTitle("Delete these manual hours?")
+                        .setNegativeButton("Cancel", null).setPositiveButton("Delete", (d2, w2) -> {
+                            db.deleteManualWork(old.id);
+                            render();
+                        }).show());
+        dialog.setOnShowListener(unused -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            try {
+                String normalizedDate = isoDate.format(new Date(parseStamp(day.getText().toString().trim() + " 12:00")));
+                int worked = parseMinutes(duration.getText().toString());
+                if (worked <= 0 || worked > 24 * 60) throw new IllegalArgumentException("Enter between 0:01 and 24:00 hours");
+                TrackerDb.ManualWork m = old == null ? new TrackerDb.ManualWork() : old;
+                m.day = normalizedDate;
+                m.minutes = worked;
+                m.type = home.isChecked() ? "home" : "other";
+                m.note = note.getText().toString().trim();
+                db.saveManualWork(m);
+                dialog.dismiss();
+                render();
+            } catch (Exception error) { toast("Invalid manual entry: " + error.getMessage()); }
+        }));
+        dialog.show();
+    }
+
     private void requestTrackingPermissions() {
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION}, 101);
@@ -556,7 +661,8 @@ public final class MainActivity extends Activity {
         Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         i.addCategory(Intent.CATEGORY_OPENABLE);
         i.setType("text/csv");
-        i.putExtra(Intent.EXTRA_TITLE, type.equals("visits") ? "worktrail-visits.csv" : "worktrail-daily.csv");
+        i.putExtra(Intent.EXTRA_TITLE, type.equals("visits") ? "worktrail-visits.csv" :
+                (type.equals("manual") ? "worktrail-manual-hours.csv" : "worktrail-daily.csv"));
         startActivityForResult(i, 201);
     }
 
@@ -566,7 +672,9 @@ public final class MainActivity extends Activity {
         try (OutputStream out = getContentResolver().openOutputStream(data.getData());
              OutputStreamWriter writer = new OutputStreamWriter(out, StandardCharsets.UTF_8)) {
             writer.write('\ufeff'); // Helps Excel recognize UTF-8.
-            if (exportType.equals("visits")) exportVisits(writer); else exportDaily(writer);
+            if (exportType.equals("visits")) exportVisits(writer);
+            else if (exportType.equals("manual")) exportManual(writer);
+            else exportDaily(writer);
             writer.flush();
             toast("CSV saved");
         } catch (Exception error) { toast("Export failed: " + error.getMessage()); }
@@ -587,8 +695,15 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void exportManual(OutputStreamWriter writer) throws Exception {
+        writer.write("Date,Category,Credited minutes,Comment\n");
+        for (TrackerDb.ManualWork m : db.allManualWork())
+            writer.write(csv(m.day) + "," + csv("home".equals(m.type) ? "Work from home" : "Other manual work") +
+                    "," + m.minutes + "," + csv(m.note) + "\n");
+    }
+
     private void exportDaily(OutputStreamWriter writer) throws Exception {
-        writer.write("Date,Elapsed minutes,Credited minutes,Expected minutes,Balance minutes,Schedule configured\n");
+        writer.write("Date,On-site elapsed minutes,On-site credited minutes,Manual credited minutes,Total credited minutes,Expected minutes,Balance minutes,Schedule configured\n");
         Calendar day = Calendar.getInstance();
         midnight(day);
         day.add(Calendar.DAY_OF_MONTH, -364);
@@ -599,7 +714,8 @@ public final class MainActivity extends Activity {
             int expected = schedule.targetForDay(day);
             TrackerDb.Daily d = db.daily(day.getTimeInMillis(), end.getTimeInMillis(), now, expected, schedule);
             writer.write(isoDate.format(new Date(day.getTimeInMillis())) + "," + TimeMath.minutes(d.elapsedMillis) + "," +
-                    d.creditedMinutes + "," + (schedule.configured() ? expected : "") + "," +
+                    d.onsiteCreditedMinutes + "," + d.manualMinutes + "," + d.creditedMinutes + "," +
+                    (schedule.configured() ? expected : "") + "," +
                     (schedule.configured() ? d.creditedMinutes - expected : "") + "," + schedule.configured() + "\n");
             day = end;
         }
